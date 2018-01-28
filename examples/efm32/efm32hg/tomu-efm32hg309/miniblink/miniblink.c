@@ -22,8 +22,8 @@
  *
  * Toggles between the Red and Green LEDs.
  *
- * Red controlled by PA0
- * Green controlled by PB7
+ * Green controlled by PA0
+ * Red controlled by PB7
  */
 
 #include <libopencm3/cm3/common.h>
@@ -43,10 +43,10 @@
 /* Default AHB (core clock) frequency of Tomu board */
 #define AHB_FREQUENCY 14000000
 
-#define LED_RED_PORT   GPIOA
-#define LED_RED_PIN    GPIO0
-#define LED_GREEN_PORT GPIOB
-#define LED_GREEN_PIN  GPIO7
+#define LED_GREEN_PORT GPIOA
+#define LED_GREEN_PIN  GPIO0
+#define LED_RED_PORT   GPIOB
+#define LED_RED_PIN    GPIO7
 
 volatile uint32_t system_millis = 0;
 
