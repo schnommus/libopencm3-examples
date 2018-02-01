@@ -3,6 +3,6 @@
 This example implements a USB CDC-ACM device (aka Virtual Serial Port)
 to demonstrate the use of the USB device stack.
 
-It will echo any data received.
-
-The red LED will toggle constantly, while the green LED will toggle whenever data is received through the virtual serial port.
+When data is recieved, it will toggle the green LED and echo the data.
+The red LED is toggled constantly and a string is sent over USB every
+time the LED changes state as a heartbeat.

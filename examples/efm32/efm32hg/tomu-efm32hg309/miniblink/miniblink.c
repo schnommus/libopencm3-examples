@@ -22,8 +22,8 @@
  *
  * Toggles between the Red and Green LEDs.
  *
- * Green controlled by PA0
- * Red controlled by PB7
+ * Red LED controlled by PA0
+ * Green LED controlled by PB7
  */
 
 #include <libopencm3/cm3/common.h>
@@ -54,7 +54,7 @@ void sys_tick_handler(void) {
 
     ++system_millis;
 
-    // Every 100ms, toggle the LEDs
+    /* Every 100ms, toggle the LEDs */
     if(system_millis % 100 == 0) {
         gpio_toggle(LED_RED_PORT, LED_RED_PIN);
         gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
@@ -63,28 +63,28 @@ void sys_tick_handler(void) {
 
 int main(void)
 {
-    // Make sure the vector table is relocated correctly (after the Tomu bootloader)
+    /* Make sure the vector table is relocated correctly (after the Tomu bootloader) */
     SCB_VTOR = 0x4000;
 
-    // Disable the watchdog that the bootloader started.
+    /* Disable the watchdog that the bootloader started. */
     WDOG_CTRL = 0;
 
-    // GPIO peripheral clock is necessary for us to set up the GPIO pins as outputs
+    /* GPIO peripheral clock is necessary for us to set up the GPIO pins as outputs */
     cmu_periph_clock_enable(CMU_GPIO);
 
-    // Set up both LEDs as outputs
+    /* Set up both LEDs as outputs */
     gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
     gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
 
-    // Set up LEDs so that they will alternate when toggled at the same time
+    /* Set up LEDs so that they will alternate when toggled at the same time */
     gpio_set(LED_RED_PORT, LED_RED_PIN);
     gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
 
-    // Configure the system tick
+    /* Configure the system tick */
     systick_set_frequency(SYSTICK_FREQUENCY, AHB_FREQUENCY);
     systick_counter_enable();
     systick_interrupt_enable();
 
-    // Spin forever, SysTick interrupt will toggle the LEDs
+    /* Spin forever, SysTick interrupt will toggle the LEDs */
     while(1);
 }
