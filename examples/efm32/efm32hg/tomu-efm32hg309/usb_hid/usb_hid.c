@@ -41,7 +41,7 @@
 #include <string.h>
 
 /* Systick interrupt frequency, Hz */
-#define SYSTICK_FREQUENCY 10
+#define SYSTICK_FREQUENCY 100
 
 /* Default AHB (core clock) frequency of Tomu board */
 #define AHB_FREQUENCY 14000000
@@ -203,6 +203,9 @@ static int hid_control_request(usbd_device *dev, struct usb_setup_data *req, uin
 	*buf = (uint8_t *)hid_report_descriptor;
 	*len = sizeof(hid_report_descriptor);
 
+    /* Dirty way to know if we're connected */
+    g_usbd_is_connected = true;
+
 	return 1;
 }
 
@@ -234,22 +237,25 @@ void sys_tick_handler(void)
 {
 	static int x = 0;
 	static int dir = 1;
-	uint8_t buf[4] = {0, 0, 0, 0};
+	static uint8_t buf[4] = {0, 0, 0, 0};
 
-	buf[1] = dir;
-	x += dir;
+    if(g_usbd_is_connected) {
 
-	if (x > 30) {
-        gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
-		dir = -dir;
+        buf[1] = dir;
+        x += dir;
+
+        if (x > 30) {
+            gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
+            dir = -dir;
+        }
+
+        if (x < -30) {
+            gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
+            dir = -dir;
+        }
+
+        usbd_ep_write_packet(g_usbd_dev, 0x81, buf, 4);
     }
-
-	if (x < -30) {
-        gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
-		dir = -dir;
-    }
-
-	usbd_ep_write_packet(g_usbd_dev, 0x81, buf, 4);
 }
 
 int main(void)
@@ -274,12 +280,14 @@ int main(void)
 	usbd_register_set_config_callback(g_usbd_dev, hid_set_config);
 
     /* Enable USB IRQs */
+    nvic_set_priority(NVIC_USB_IRQ, 0x40);
 	nvic_enable_irq(NVIC_USB_IRQ);
 
-    /* Configure the system tick */
+    /* Configure the system tick, at lower priority than USB IRQ */
     systick_set_frequency(SYSTICK_FREQUENCY, AHB_FREQUENCY);
     systick_counter_enable();
     systick_interrupt_enable();
+    nvic_set_priority(NVIC_SYSTICK_IRQ, 0x10);
 
     while(1) {
         gpio_toggle(LED_RED_PORT, LED_RED_PIN);
