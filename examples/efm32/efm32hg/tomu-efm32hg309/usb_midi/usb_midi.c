@@ -359,6 +359,20 @@ static void usbmidi_set_config(usbd_device *usbd_dev, uint16_t wValue)
 	usbd_ep_setup(usbd_dev, 0x81, USB_ENDPOINT_ATTR_BULK, 64, NULL);
 }
 
+static void usbmidi_send_note(usbd_device *usbd_dev, int note_on)
+{
+	char buf[4] = { 0x08, /* USB framing: virtual cable 0, note on */
+			0x80, /* MIDI command: note on, channel 1 */
+			60,   /* Note 60 (middle C) */
+			64,   /* "Normal" velocity */
+	};
+
+	buf[0] |= note_on;
+	buf[1] |= note_on << 4;
+
+	while (usbd_ep_write_packet(usbd_dev, 0x81, buf, sizeof(buf)) == 0);
+}
+
 void usb_isr(void)
 {
     usbd_poll(g_usbd_dev);
@@ -398,7 +412,13 @@ int main(void)
 
     while(1) {
         gpio_toggle(LED_RED_PORT, LED_RED_PIN);
-        for(i = 0; i != 500000; ++i)
+
+        /* Send note on, then note off event */
+        for(i = 0; i != 2000000; ++i)
 			__asm__("nop");
+        usbmidi_send_note(g_usbd_dev, 1);
+        for(i = 0; i != 2000000; ++i)
+			__asm__("nop");
+        usbmidi_send_note(g_usbd_dev, 0);
     }
 }
