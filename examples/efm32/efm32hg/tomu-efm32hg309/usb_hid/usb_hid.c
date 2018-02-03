@@ -41,19 +41,19 @@
 #include <string.h>
 
 /* Systick interrupt frequency, Hz */
-#define SYSTICK_FREQUENCY 100
+#define SYSTICK_FREQUENCY	100
 
 /* Default AHB (core clock) frequency of Tomu board */
-#define AHB_FREQUENCY 14000000
+#define AHB_FREQUENCY		14000000
 
-#define LED_GREEN_PORT GPIOA
-#define LED_GREEN_PIN  GPIO0
-#define LED_RED_PORT   GPIOB
-#define LED_RED_PIN    GPIO7
+#define LED_GREEN_PORT		GPIOA
+#define LED_GREEN_PIN		GPIO0
+#define LED_RED_PORT		GPIOB
+#define LED_RED_PIN		GPIO7
 
-#define VENDOR_ID                 0x1209    /* pid.code */
-#define PRODUCT_ID                0x70b1    /* Assigned to Tomu project */
-#define DEVICE_VER                0x0101    /* Program version */
+#define VENDOR_ID		0x1209	/* pid.code */
+#define PRODUCT_ID		0x70b1	/* Assigned to Tomu project */
+#define DEVICE_VER		0x0101	/* Program version */
 
 bool g_usbd_is_connected = false;
 usbd_device *g_usbd_dev = 0;
@@ -203,8 +203,8 @@ static int hid_control_request(usbd_device *dev, struct usb_setup_data *req, uin
 	*buf = (uint8_t *)hid_report_descriptor;
 	*len = sizeof(hid_report_descriptor);
 
-    /* Dirty way to know if we're connected */
-    g_usbd_is_connected = true;
+	/* Dirty way to know if we're connected */
+	g_usbd_is_connected = true;
 
 	return 1;
 }
@@ -225,12 +225,12 @@ static void hid_set_config(usbd_device *dev, uint16_t wValue)
 
 void usb_isr(void)
 {
-    usbd_poll(g_usbd_dev);
+	usbd_poll(g_usbd_dev);
 }
 
 void hard_fault_handler(void)
 {
-    while(1);
+	while (1);
 }
 
 void sys_tick_handler(void)
@@ -239,59 +239,63 @@ void sys_tick_handler(void)
 	static int dir = 1;
 	static uint8_t buf[4] = {0, 0, 0, 0};
 
-    if(g_usbd_is_connected) {
+	if (g_usbd_is_connected) {
 
-        buf[1] = dir;
-        x += dir;
+		buf[1] = dir;
+		x += dir;
 
-        if (x > 30) {
-            gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
-            dir = -dir;
-        }
+		if (x > 30) {
+			gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
+			dir = -dir;
+		}
 
-        if (x < -30) {
-            gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
-            dir = -dir;
-        }
+		if (x < -30) {
+			gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
+			dir = -dir;
+		}
 
-        usbd_ep_write_packet(g_usbd_dev, 0x81, buf, 4);
-    }
+		usbd_ep_write_packet(g_usbd_dev, 0x81, buf, 4);
+	}
 }
 
 int main(void)
 {
-    int i;
+	int i;
 
-    /* Make sure the vector table is relocated correctly (after the Tomu bootloader) */
-    SCB_VTOR = 0x4000;
+	/* Make sure the vector table is relocated correctly
+	 * (after the Tomu bootloader) */
+	SCB_VTOR = 0x4000;
 
-    /* Disable the watchdog that the bootloader started. */
-    WDOG_CTRL = 0;
+	/* Disable the watchdog that the bootloader started. */
+	WDOG_CTRL = 0;
 
-    /* GPIO peripheral clock is necessary for us to set up the GPIO pins as outputs */
-    cmu_periph_clock_enable(CMU_GPIO);
+	/* GPIO peripheral clock is necessary for us to set
+	 * up the GPIO pins as outputs */
+	cmu_periph_clock_enable(CMU_GPIO);
 
-    /* Set up both LEDs as outputs */
-    gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
-    gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
+	/* Set up both LEDs as outputs */
+	gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
+	gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
 
-    /* Configure the USB core & stack */
-	g_usbd_dev = usbd_init(&efm32hg_usb_driver, &dev_descr, &config, usb_strings, 3, usbd_control_buffer, sizeof(usbd_control_buffer));
+	/* Configure the USB core & stack */
+	g_usbd_dev = usbd_init(&efm32hg_usb_driver, &dev_descr, &config,
+			       usb_strings, 3, usbd_control_buffer,
+			       sizeof(usbd_control_buffer));
 	usbd_register_set_config_callback(g_usbd_dev, hid_set_config);
 
-    /* Enable USB IRQs */
-    nvic_set_priority(NVIC_USB_IRQ, 0x40);
+	/* Enable USB IRQs */
+	nvic_set_priority(NVIC_USB_IRQ, 0x40);
 	nvic_enable_irq(NVIC_USB_IRQ);
 
-    /* Configure the system tick, at lower priority than USB IRQ */
-    systick_set_frequency(SYSTICK_FREQUENCY, AHB_FREQUENCY);
-    systick_counter_enable();
-    systick_interrupt_enable();
-    nvic_set_priority(NVIC_SYSTICK_IRQ, 0x10);
+	/* Configure the system tick, at lower priority than USB IRQ */
+	systick_set_frequency(SYSTICK_FREQUENCY, AHB_FREQUENCY);
+	systick_counter_enable();
+	systick_interrupt_enable();
+	nvic_set_priority(NVIC_SYSTICK_IRQ, 0x10);
 
-    while(1) {
-        gpio_toggle(LED_RED_PORT, LED_RED_PIN);
-        for(i = 0; i != 500000; ++i)
+	while (1) {
+		gpio_toggle(LED_RED_PORT, LED_RED_PIN);
+		for (i = 0; i != 500000; ++i)
 			__asm__("nop");
-    }
+	}
 }

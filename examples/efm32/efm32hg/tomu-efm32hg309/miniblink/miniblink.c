@@ -38,53 +38,56 @@
 #include <stdio.h>
 
 /* Systick interrupt frequency, Hz */
-#define SYSTICK_FREQUENCY 1000
+#define SYSTICK_FREQUENCY	1000
 
 /* Default AHB (core clock) frequency of Tomu board */
-#define AHB_FREQUENCY 14000000
+#define AHB_FREQUENCY		14000000
 
-#define LED_GREEN_PORT GPIOA
-#define LED_GREEN_PIN  GPIO0
-#define LED_RED_PORT   GPIOB
-#define LED_RED_PIN    GPIO7
+#define LED_GREEN_PORT		GPIOA
+#define LED_GREEN_PIN		GPIO0
+#define LED_RED_PORT		GPIOB
+#define LED_RED_PIN		GPIO7
 
 volatile uint32_t system_millis = 0;
 
-void sys_tick_handler(void) {
+void sys_tick_handler(void)
+{
+	++system_millis;
 
-    ++system_millis;
-
-    /* Every 100ms, toggle the LEDs */
-    if(system_millis % 100 == 0) {
-        gpio_toggle(LED_RED_PORT, LED_RED_PIN);
-        gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
-    }
+	/* Every 100ms, toggle the LEDs */
+	if (system_millis % 100 == 0) {
+		gpio_toggle(LED_RED_PORT, LED_RED_PIN);
+		gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
+	}
 }
 
 int main(void)
 {
-    /* Make sure the vector table is relocated correctly (after the Tomu bootloader) */
-    SCB_VTOR = 0x4000;
+	/* Make sure the vector table is relocated correctly
+	 * (after the Tomu bootloader) */
+	SCB_VTOR = 0x4000;
 
-    /* Disable the watchdog that the bootloader started. */
-    WDOG_CTRL = 0;
+	/* Disable the watchdog that the bootloader started. */
+	WDOG_CTRL = 0;
 
-    /* GPIO peripheral clock is necessary for us to set up the GPIO pins as outputs */
-    cmu_periph_clock_enable(CMU_GPIO);
+	/* GPIO peripheral clock is necessary for us to set
+	 * up the GPIO pins as outputs */
+	cmu_periph_clock_enable(CMU_GPIO);
 
-    /* Set up both LEDs as outputs */
-    gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
-    gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
+	/* Set up both LEDs as outputs */
+	gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
+	gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
 
-    /* Set up LEDs so that they will alternate when toggled at the same time */
-    gpio_set(LED_RED_PORT, LED_RED_PIN);
-    gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
+	/* Set up LEDs so that they will alternate when
+	 * toggled at the same time */
+	gpio_set(LED_RED_PORT, LED_RED_PIN);
+	gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
 
-    /* Configure the system tick */
-    systick_set_frequency(SYSTICK_FREQUENCY, AHB_FREQUENCY);
-    systick_counter_enable();
-    systick_interrupt_enable();
+	/* Configure the system tick */
+	systick_set_frequency(SYSTICK_FREQUENCY, AHB_FREQUENCY);
+	systick_counter_enable();
+	systick_interrupt_enable();
 
-    /* Spin forever, SysTick interrupt will toggle the LEDs */
-    while(1);
+	/* Spin forever, SysTick interrupt will toggle the LEDs */
+	while (1);
 }

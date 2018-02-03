@@ -45,16 +45,16 @@
 #include <string.h>
 
 /* Default AHB (core clock) frequency of Tomu board */
-#define AHB_FREQUENCY 14000000
+#define AHB_FREQUENCY		14000000
 
-#define LED_GREEN_PORT GPIOA
-#define LED_GREEN_PIN  GPIO0
-#define LED_RED_PORT   GPIOB
-#define LED_RED_PIN    GPIO7
+#define LED_GREEN_PORT		GPIOA
+#define LED_GREEN_PIN		GPIO0
+#define LED_RED_PORT		GPIOB
+#define LED_RED_PIN		GPIO7
 
-#define VENDOR_ID                 0x1209    /* pid.code */
-#define PRODUCT_ID                0x70b1    /* Assigned to Tomu project */
-#define DEVICE_VER                0x0101    /* Program version */
+#define VENDOR_ID		0x1209	/* pid.code */
+#define PRODUCT_ID		0x70b1	/* Assigned to Tomu project */
+#define DEVICE_VER		0x0101	/* Program version */
 
 bool g_usbd_is_connected = false;
 usbd_device *g_usbd_dev = 0;
@@ -210,14 +210,12 @@ static int cdcacm_control_request(usbd_device *usbd_dev, struct usb_setup_data *
 	(void)usbd_dev;
 
 	switch(req->bRequest) {
-	case USB_CDC_REQ_SET_CONTROL_LINE_STATE: {
-        g_usbd_is_connected = req->wValue & 1; /* Check RTS bit */
+	case USB_CDC_REQ_SET_CONTROL_LINE_STATE:
+		g_usbd_is_connected = req->wValue & 1; /* Check RTS bit */
 		return USBD_REQ_HANDLED;
-		}
-	case USB_CDC_REQ_SET_LINE_CODING: 
+	case USB_CDC_REQ_SET_LINE_CODING:
 		if(*len < sizeof(struct usb_cdc_line_coding))
 			return 0;
-
 		return USBD_REQ_HANDLED;
 	}
 	return 0;
@@ -228,8 +226,8 @@ static void cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 {
 	(void)ep;
 
-    /* We got some data, toggle the green LED */
-    gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
+	/* We got some data, toggle the green LED */
+	gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
 
 	char buf[64];
 	int len = usbd_ep_read_packet(usbd_dev, 0x01, buf, 64);
@@ -257,48 +255,53 @@ static void cdcacm_set_config(usbd_device *usbd_dev, uint16_t wValue)
 
 void usb_isr(void)
 {
-    usbd_poll(g_usbd_dev);
+	usbd_poll(g_usbd_dev);
 }
 
 void hard_fault_handler(void)
 {
-    while(1);
+	while (1);
 }
 
-void usb_puts(char *s) {
-    if(g_usbd_is_connected) {
-        usbd_ep_write_packet(g_usbd_dev, 0x82, s, strnlen(s, 64));
-    }
+void usb_puts(char *s)
+{
+	if (g_usbd_is_connected) {
+		usbd_ep_write_packet(g_usbd_dev, 0x82, s, strnlen(s, 64));
+	}
 }
 
 int main(void)
 {
-    int i;
+	int i;
 
-    /* Make sure the vector table is relocated correctly (after the Tomu bootloader) */
-    SCB_VTOR = 0x4000;
+	/* Make sure the vector table is relocated correctly
+	 * (after the Tomu bootloader) */
+	SCB_VTOR = 0x4000;
 
-    /* Disable the watchdog that the bootloader started. */
-    WDOG_CTRL = 0;
+	/* Disable the watchdog that the bootloader started. */
+	WDOG_CTRL = 0;
 
-    /* GPIO peripheral clock is necessary for us to set up the GPIO pins as outputs */
-    cmu_periph_clock_enable(CMU_GPIO);
+	/* GPIO peripheral clock is necessary for us to set
+	 * up the GPIO pins as outputs */
+	cmu_periph_clock_enable(CMU_GPIO);
 
-    /* Set up both LEDs as outputs */
-    gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
-    gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
+	/* Set up both LEDs as outputs */
+	gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
+	gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
 
-    /* Configure the USB core & stack */
-	g_usbd_dev = usbd_init(&efm32hg_usb_driver, &dev, &config, usb_strings, 3, usbd_control_buffer, sizeof(usbd_control_buffer));
+	/* Configure the USB core & stack */
+	g_usbd_dev = usbd_init(&efm32hg_usb_driver, &dev, &config,
+			       usb_strings, 3, usbd_control_buffer,
+			       sizeof(usbd_control_buffer));
 	usbd_register_set_config_callback(g_usbd_dev, cdcacm_set_config);
 
-    /* Enable USB IRQs */
+	/* Enable USB IRQs */
 	nvic_enable_irq(NVIC_USB_IRQ);
 
-    while(1) {
-        usb_puts("toggling LED\n\r");
-        gpio_toggle(LED_RED_PORT, LED_RED_PIN);
-        for(i = 0; i != 500000; ++i)
+	while (1) {
+		usb_puts("toggling LED\n\r");
+		gpio_toggle(LED_RED_PORT, LED_RED_PIN);
+		for (i = 0; i != 500000; ++i)
 			__asm__("nop");
-    }
+	}
 }
