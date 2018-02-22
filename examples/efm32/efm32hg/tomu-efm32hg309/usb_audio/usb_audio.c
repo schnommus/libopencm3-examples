@@ -84,7 +84,10 @@ static const struct {
 		.bcdADC = 0x0100,
 		.wTotalLength =
 			   sizeof(struct usb_audio_header_descriptor_head) +
-			   1 * sizeof(struct usb_audio_header_descriptor_body),
+			   1 * sizeof(struct usb_audio_header_descriptor_body) +
+			   sizeof(struct usb_audio_input_terminal_descriptor) +
+			   sizeof(struct usb_audio_feature_unit_descriptor_2ch) +
+			   sizeof(struct usb_audio_output_terminal_descriptor),
 		.binCollection = 1,
 	},
 	.header_body = {
@@ -148,21 +151,6 @@ static const struct usb_interface_descriptor audio_control_iface[] = {{
 	.extralen = sizeof(audio_control_functional_descriptors)
 } };
 
-static const struct usb_interface_descriptor audio_zerobw_streaming_iface[] = {{
-	.bLength = USB_DT_INTERFACE_SIZE,
-	.bDescriptorType = USB_DT_INTERFACE,
-	.bInterfaceNumber = 1,
-	.bAlternateSetting = 0,
-	.bNumEndpoints = 0,
-	.bInterfaceClass = USB_CLASS_AUDIO,
-	.bInterfaceSubClass = USB_AUDIO_SUBCLASS_AUDIOSTREAMING,
-	.bInterfaceProtocol = 0,
-	.iInterface = 0,
-
-	.extra = 0,
-	.extralen = 0,
-} };
-
 static const struct {
 	struct usb_audio_stream_interface_descriptor audio_cs_streaming_iface_desc;
 	struct usb_audio_format_type1_descriptor_1freq audio_type1_format_desc;
@@ -204,18 +192,34 @@ static const struct usb_audio_stream_audio_endpoint_descriptor audio_streaming_c
 static const struct usb_endpoint_descriptor isochronous_ep[] = { {
 	.bLength = USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType = USB_DT_ENDPOINT,
-	.bEndpointAddress = 0x81 /* XXX: EP3 In?? */,
+	.bEndpointAddress = 0x82 /* XXX: EP3 In?? */,
 	.bmAttributes = USB_ENDPOINT_ATTR_ASYNC | USB_ENDPOINT_ATTR_ISOCHRONOUS,
 	.wMaxPacketSize = 64,
 	.bInterval = 0x01, /* 1 millisecond */
 
-	/* XXX: not using usb_audio_stream_endpoint_descriptor?? */
+	/* XXX: not using usb_audio_stream_endpoint_descriptor??
+	 * (Why? These are USBv1.0 endpoint descriptors)*/
 
 	.extra = &audio_streaming_cs_ep_desc[0],
 	.extralen = sizeof(audio_streaming_cs_ep_desc[0])
 } };
 
-static const struct usb_interface_descriptor audio_streaming_iface[] = {{
+static const struct usb_interface_descriptor audio_streaming_iface[] = { {
+	/* zerobw streaming interface (alt 0) */
+	.bLength = USB_DT_INTERFACE_SIZE,
+	.bDescriptorType = USB_DT_INTERFACE,
+	.bInterfaceNumber = 1,
+	.bAlternateSetting = 0,
+	.bNumEndpoints = 0,
+	.bInterfaceClass = USB_CLASS_AUDIO,
+	.bInterfaceSubClass = USB_AUDIO_SUBCLASS_AUDIOSTREAMING,
+	.bInterfaceProtocol = 0,
+	.iInterface = 0,
+
+	.extra = 0,
+	.extralen = 0,
+}, {
+	/* Actual streaming interface (alt 1) */
 	.bLength = USB_DT_INTERFACE_SIZE,
 	.bDescriptorType = USB_DT_INTERFACE,
 	.bInterfaceNumber = 1,
@@ -236,10 +240,7 @@ static const struct usb_interface ifaces[] = {{
 	.num_altsetting = 1,
 	.altsetting = audio_control_iface,
 }, {
-	.num_altsetting = 1,
-	.altsetting = audio_zerobw_streaming_iface,
-}, {
-	.num_altsetting = 1,
+	.num_altsetting = 2,
 	.altsetting = audio_streaming_iface,
 } };
 
@@ -267,11 +268,16 @@ static const char * usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
-static void usbmidi_set_config(usbd_device *usbd_dev, uint16_t wValue)
+void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
+{
+	while (1);
+}
+
+static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
 {
 	(void)wValue;
 
-	usbd_ep_setup(usbd_dev, 0x81, USB_ENDPOINT_ATTR_ISOCHRONOUS, 64, NULL);
+	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS | USB_ENDPOINT_ATTR_ASYNC, 64, usbaudio_iso_stream_callback);
 }
 
 void usb_isr(void)
@@ -307,7 +313,7 @@ int main(void)
 	g_usbd_dev = usbd_init(&efm32hg_usb_driver, &dev, &config,
 			       usb_strings, 3, usbd_control_buffer,
 			       sizeof(usbd_control_buffer));
-	usbd_register_set_config_callback(g_usbd_dev, usbmidi_set_config);
+	usbd_register_set_config_callback(g_usbd_dev, usbaudio_set_config);
 
 	/* Enable USB IRQs */
 	nvic_enable_irq(NVIC_USB_IRQ);
