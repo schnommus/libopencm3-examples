@@ -236,11 +236,14 @@ static const struct usb_interface_descriptor audio_streaming_iface[] = { {
 	.extralen = sizeof(audio_streaming_functional_descriptors)
 } };
 
+uint8_t streaming_iface_cur_altsetting = 0;
+
 static const struct usb_interface ifaces[] = {{
 	.num_altsetting = 1,
 	.altsetting = audio_control_iface,
 }, {
 	.num_altsetting = 2,
+	.cur_altsetting = &streaming_iface_cur_altsetting,
 	.altsetting = audio_streaming_iface,
 } };
 
@@ -321,7 +324,7 @@ int main(void)
 	while (1) {
 		gpio_toggle(LED_RED_PORT, LED_RED_PIN);
 
-		for (i = 0; i != 2000000; ++i)
+		for (i = 0; i != 200000; ++i)
 			__asm__("nop");
 	}
 }
