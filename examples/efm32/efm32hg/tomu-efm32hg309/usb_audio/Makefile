@@ -20,4 +20,7 @@
 BINARY = usb_audio
 LDSCRIPT = ../tomu-efm32hg309.ld
 
+# We're using some maths here
+LDLIBS += -lm
+
 include ../../Makefile.include

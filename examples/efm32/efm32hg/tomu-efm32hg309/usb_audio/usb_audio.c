@@ -37,6 +37,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 /* Default AHB (core clock) frequency of Tomu board */
 #define AHB_FREQUENCY		14000000
@@ -271,16 +272,26 @@ static const char * usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
+int16_t data[32] = {0};
+
+void init_data() {
+    for(int i = 0; i != 16; ++i) {
+        data[i*2] = 32000 * sin(2 * 3.141 * i / 16);
+        data[i*2+1] = 32000 * cos(2 * 3.141 * i / 16);
+    }
+}
+
 void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
 {
-	while (1);
+    usbd_ep_write_packet(usbd_dev, 0x82, data, 64);
 }
 
 static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
 {
 	(void)wValue;
 
-	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS | USB_ENDPOINT_ATTR_ASYNC, 64, usbaudio_iso_stream_callback);
+	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS, 64, usbaudio_iso_stream_callback);
+    usbd_ep_write_packet(usbd_dev, 0x82, data, 64);
 }
 
 void usb_isr(void)
@@ -311,6 +322,8 @@ int main(void)
 	/* Set up both LEDs as outputs */
 	gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
 	gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
+
+    init_data();
 
 	/* Configure the USB core & stack */
 	g_usbd_dev = usbd_init(&efm32hg_usb_driver, &dev, &config,
