@@ -176,7 +176,7 @@ static const struct {
 			.bSamFreqType = 1, /* 1 discrete sampling frequency */
 		},
 		.freqs = { {
-			.tSamFreq = 48000,
+			.tSamFreq = 8000,
 		} },
 	}
 };
@@ -195,7 +195,7 @@ static const struct usb_endpoint_descriptor isochronous_ep[] = { {
 	.bDescriptorType = USB_DT_ENDPOINT,
 	.bEndpointAddress = 0x82 /* XXX: EP3 In?? */,
 	.bmAttributes = USB_ENDPOINT_ATTR_ASYNC | USB_ENDPOINT_ATTR_ISOCHRONOUS,
-	.wMaxPacketSize = 64,
+	.wMaxPacketSize = 256,
 	.bInterval = 0x01, /* 1 millisecond */
 
 	/* XXX: not using usb_audio_stream_endpoint_descriptor??
@@ -272,26 +272,28 @@ static const char * usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
-int16_t data[32] = {0};
+#define DATA_SIZE 24
+
+int16_t data[DATA_SIZE] = {0};
 
 void init_data() {
-    for(int i = 0; i != 16; ++i) {
-        data[i*2] = 32000 * sin(2 * 3.141 * i / 16);
-        data[i*2+1] = 32000 * cos(2 * 3.141 * i / 16);
+    for(int i = 0; i != DATA_SIZE/2; ++i) {
+        data[i*2] = i;
+        data[i*2+1] = i;
     }
 }
 
 void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
 {
-    usbd_ep_write_packet(usbd_dev, 0x82, data, 64);
+    usbd_ep_write_packet(usbd_dev, 0x82, data, DATA_SIZE*2);
 }
 
 static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
 {
 	(void)wValue;
 
-	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS, 64, usbaudio_iso_stream_callback);
-    usbd_ep_write_packet(usbd_dev, 0x82, data, 64);
+	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS, DATA_SIZE*2, usbaudio_iso_stream_callback);
+    usbd_ep_write_packet(usbd_dev, 0x82, data, DATA_SIZE*2);
 }
 
 void usb_isr(void)
