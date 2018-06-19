@@ -33,6 +33,7 @@
 #include <libopencm3/efm32/wdog.h>
 #include <libopencm3/efm32/gpio.h>
 #include <libopencm3/efm32/cmu.h>
+#include <libopencm3/usb/dwc_otg_common.h>
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -283,8 +284,18 @@ void init_data() {
     }
 }
 
+#define REBASE(x)        MMIO32((x) + (USB_OTG_FS_BASE))
+
 void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
 {
+    static int toggle = 0;
+
+    if(toggle++ % 2 == 0) {
+        REBASE(OTG_DIEPCTL(ep)) |= OTG_DIEPCTLX_SD0PID;
+    } else {
+        REBASE(OTG_DIEPCTL(ep)) |= OTG_DIEPCTLX_SD1PID;
+    }
+
     usbd_ep_write_packet(usbd_dev, 0x82, data, DATA_SIZE*2);
 }
 
