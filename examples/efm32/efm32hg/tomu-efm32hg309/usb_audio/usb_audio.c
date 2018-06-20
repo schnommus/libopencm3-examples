@@ -273,7 +273,7 @@ static const char * usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[128];
 
-#define DATA_SIZE 24
+#define DATA_SIZE 16
 
 int16_t data[DATA_SIZE] = {0};
 
@@ -290,6 +290,8 @@ void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
 {
     static int toggle = 0;
 
+    gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
+
     if(toggle++ % 2 == 0) {
         REBASE(OTG_DIEPCTL(ep)) |= OTG_DIEPCTLX_SD0PID;
     } else {
@@ -304,6 +306,8 @@ static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
 	(void)wValue;
 
 	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS, DATA_SIZE*2, usbaudio_iso_stream_callback);
+
+    /* XXX: This is necessary -> but why? */
     usbd_ep_write_packet(usbd_dev, 0x82, data, DATA_SIZE*2);
 }
 
@@ -336,6 +340,8 @@ int main(void)
 	gpio_mode_setup(LED_RED_PORT, GPIO_MODE_WIRED_AND, LED_RED_PIN);
 	gpio_mode_setup(LED_GREEN_PORT, GPIO_MODE_WIRED_AND, LED_GREEN_PIN);
 
+    gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
+
     init_data();
 
 	/* Configure the USB core & stack */
@@ -349,6 +355,7 @@ int main(void)
 
 	while (1) {
 		gpio_toggle(LED_RED_PORT, LED_RED_PIN);
+        gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
 
 		for (i = 0; i != 200000; ++i)
 			__asm__("nop");
