@@ -75,6 +75,8 @@ static const struct usb_device_descriptor dev = {
 #include "mic_descriptors.h"
 #include "midi_descriptors.h"
 
+#include "midi_events.h"
+
 uint8_t mic_streaming_iface_cur_altsetting = 0;
 
 static const struct usb_interface ifaces[] = {{
@@ -168,6 +170,42 @@ const uint8_t sysex_identity[] = {
 	0x00,	/* Padding */
 };
 
+void note_on_event(uint8_t channel, uint8_t key, uint8_t vel) {
+    if(channel == 5) {
+        gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
+    }
+}
+
+void note_off_event(uint8_t channel, uint8_t key, uint8_t vel) {
+    if(channel == 5) {
+        gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
+    }
+}
+
+void decode_midi_event_packet(midi_usb_event_packet_t p) {
+
+    uint8_t midi_channel = p.midi0 & 0xF;
+    uint8_t midi_command = p.midi0 >> 4;
+
+    if(midi_command != p.code_index_number) {
+        return;
+    }
+
+    switch (midi_command) {
+        case MIDI_NOTE_OFF: {
+            note_off_event(midi_channel, p.midi1, p.midi2);
+            break;
+        }
+        case MIDI_NOTE_ON: {
+            note_on_event(midi_channel, p.midi1, p.midi2);
+            break;
+        }
+        default: {
+            break;
+        }
+    }
+}
+
 static void usbmidi_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 {
 	(void)ep;
@@ -175,6 +213,13 @@ static void usbmidi_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 	char buf[64];
 	int len = usbd_ep_read_packet(usbd_dev, 0x01, buf, 64);
 
+    if(len % 4 == 0) {
+        for(int i = 0; i != len; i += 4) {
+            decode_midi_event_packet(*(midi_usb_event_packet_t*)(buf+i));
+        }
+    }
+
+#if 0
 	/* This implementation treats any message from the host as a SysEx
 	 * identity request. This works well enough providing the host
 	 * packs the identify request in a single 8 byte USB message.
@@ -183,8 +228,8 @@ static void usbmidi_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 		while (usbd_ep_write_packet(usbd_dev, 0x81, sysex_identity,
 					    sizeof(sysex_identity)) == 0);
 	}
+#endif
 
-	gpio_toggle(LED_GREEN_PORT, LED_GREEN_PIN);
 }
 
 static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
