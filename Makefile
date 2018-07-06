@@ -20,7 +20,7 @@
 PREFIX		?= arm-none-eabi
 #PREFIX		?= arm-elf
 
-TARGETS		+= efm32/efm32hg
+TARGETS		:= efm32/efm32hg
 
 # Be silent per default, but 'make V=1' will show all compiler calls.
 ifneq ($(V),1)

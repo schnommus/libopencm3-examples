@@ -116,35 +116,16 @@ static const char * usb_strings[] = {
 };
 
 /* Buffer to be used for control requests. */
-uint8_t usbd_control_buffer[512];
+uint8_t usbd_control_buffer[1024];
 
-#define DATA_SIZE 16
+#define WAVEFORM_SAMPLES 512 /* 256 time units (stereo) */
+#define ISO_COPY_BUF_SZ  32  /* bytes = 16 samples = 8 time units */
+#define ISO_COPY_BUF_SAMPLES ISO_COPY_BUF_SZ/2
 
-int16_t data[DATA_SIZE] = {0};
-
-void init_data() {
-    for(int i = 0; i != DATA_SIZE/2; ++i) {
-        data[i*2] = i;
-        data[i*2+1] = i;
-    }
-}
+int16_t waveform_data[WAVEFORM_SAMPLES] = {0};
 
 #define REBASE(x)        MMIO32((x) + (USB_OTG_FS_BASE))
 
-void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
-{
-    static int toggle = 0;
-
-    gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
-
-    if(toggle++ % 2 == 0) {
-        REBASE(OTG_DIEPCTL(ep)) |= OTG_DIEPCTLX_SD0PID;
-    } else {
-        REBASE(OTG_DIEPCTL(ep)) |= OTG_DIEPCTLX_SD1PID;
-    }
-
-    usbd_ep_write_packet(usbd_dev, 0x82, data, DATA_SIZE*2);
-}
 
 /* SysEx identity message, preformatted with correct USB framing information */
 const uint8_t sysex_identity[] = {
@@ -170,15 +151,134 @@ const uint8_t sysex_identity[] = {
 	0x00,	/* Padding */
 };
 
-void note_on_event(uint8_t channel, uint8_t key, uint8_t vel) {
-    if(channel == 5) {
-        gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
+#define MIDI_NOTE_MAX   127
+#define MIDI_NOTE_MIN   0
+#define MIDI_N_NOTES    128
+#define MIDI_CHANNEL_MAX 15
+#define MIDI_CHANNEL_MIN 0
+#define MIDI_N_CHANNELS 16
+
+#define MAX_VOICES 12
+
+typedef struct {
+    uint8_t channel;
+    uint8_t key;
+    uint8_t vel;
+
+    uint16_t cur_sample;
+    uint16_t skip_factor;
+
+    /* Add ADSR? */
+} note_state_t;
+
+/* Power of two so fixed-point divide optimizes to a shift */
+#define FPM 128
+
+/* note_on and note_off maintain note_states such that
+ * the first n_voices elements are always active notes */
+note_state_t note_states[MAX_VOICES];
+int n_voices = 0;
+
+uint16_t note_skip_table[MIDI_N_NOTES];
+
+void init_data() {
+    /* init all note states */
+    memset(note_states, 0, sizeof(note_states));
+
+    /* Sawtooth wave */
+    for(int i = 0; i != WAVEFORM_SAMPLES; ++i) {
+        waveform_data[i] = 15 * (float)sin(3.141 * 2.0 * (float)i / (float)WAVEFORM_SAMPLES);
+    }
+
+    /* Initialize the note skip table */
+
+    /* Compute note frequency */
+    /* Compute note period */
+    /* Convert note period to per-sample master waveform skip */
+    /* Fixed point instead of float skip proportions? */
+
+    for(int n = 0; n != MIDI_N_NOTES; ++n) {
+        uint16_t skip = 0;
+        if(n > 21 && n < 107) {
+            float freq = 27.5 * 2.0 * pow(2.0, (n-21.0)/12.0);
+            float period = 1.0 / freq;
+            float waveform_period = ((float)WAVEFORM_SAMPLES / 8000.0);
+            skip = (uint16_t)(FPM * waveform_period / period);
+        }
+        note_skip_table[n] = skip;
     }
 }
 
+
+void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
+{
+    static int toggle = 0;
+
+    if(toggle++ % 2 == 0) {
+        REBASE(OTG_DIEPCTL(ep)) |= OTG_DIEPCTLX_SD0PID;
+    } else {
+        REBASE(OTG_DIEPCTL(ep)) |= OTG_DIEPCTLX_SD1PID;
+    }
+
+    uint16_t out_samples[ISO_COPY_BUF_SAMPLES];
+    memset(out_samples, 0, ISO_COPY_BUF_SZ);
+
+    for(int i = 0; i != n_voices; ++i) {
+        /* For every (time) sample in the note... */
+        for(int s = 0; s != ISO_COPY_BUF_SAMPLES/2; ++s) {
+            note_states[i].cur_sample =
+                (note_states[i].cur_sample + note_states[i].skip_factor) % (WAVEFORM_SAMPLES*FPM);
+            out_samples[s*2] += note_states[i].vel*waveform_data[note_states[i].cur_sample / FPM];
+            out_samples[s*2+1] = out_samples[s*2];
+        }
+    }
+
+    usbd_ep_write_packet(usbd_dev, 0x82, out_samples, ISO_COPY_BUF_SZ);
+}
+
+int evict = 0;
+
+void note_on_event(uint8_t channel, uint8_t key, uint8_t vel) {
+
+    int target = 0;
+    if(n_voices >= MAX_VOICES) {
+        target = evict++ % MAX_VOICES;
+    } else {
+        target = n_voices;
+        ++n_voices;
+    }
+
+    gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
+
+    note_states[target].channel = channel;
+    note_states[target].key = key;
+    note_states[target].vel = vel;
+
+    note_states[target].cur_sample = 0;
+
+    note_states[target].skip_factor = note_skip_table[key];
+}
+
 void note_off_event(uint8_t channel, uint8_t key, uint8_t vel) {
-    if(channel == 5) {
-        gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
+
+    gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
+
+    for(int i = 0; i != n_voices; ++i) {
+        if(n_voices == 0) {
+            return;
+        }
+        if(note_states[i].channel == channel &&
+           note_states[i].key == key) {
+            /* If we aren't removing the last note,
+             * swap the last note back into our position */
+            if(i != n_voices - 1) {
+                memcpy(&note_states[i],
+                       &note_states[n_voices-1],
+                       sizeof(note_state_t));
+            }
+            --n_voices;
+            break;
+        }
     }
 }
 
@@ -236,7 +336,7 @@ static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
 {
 	(void)wValue;
 
-	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS, DATA_SIZE*2, usbaudio_iso_stream_callback);
+	usbd_ep_setup(usbd_dev, 0x82, USB_ENDPOINT_ATTR_ISOCHRONOUS, ISO_COPY_BUF_SZ, usbaudio_iso_stream_callback);
 
 	usbd_ep_setup(usbd_dev, 0x01, USB_ENDPOINT_ATTR_BULK, 64,
 			usbmidi_data_rx_cb);
@@ -244,7 +344,7 @@ static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
 	usbd_ep_setup(usbd_dev, 0x81, USB_ENDPOINT_ATTR_BULK, 64, NULL);
 
     /* XXX: This is necessary -> but why? */
-    usbd_ep_write_packet(usbd_dev, 0x82, data, DATA_SIZE*2);
+    usbd_ep_write_packet(usbd_dev, 0x82, waveform_data, ISO_COPY_BUF_SZ);
 }
 
 
@@ -310,6 +410,6 @@ int main(void)
 
 		for (i = 0; i != 200000; ++i)
 			__asm__("nop");
-		usbmidi_send_note(g_usbd_dev, 1);
+		//usbmidi_send_note(g_usbd_dev, 1);
 	}
 }

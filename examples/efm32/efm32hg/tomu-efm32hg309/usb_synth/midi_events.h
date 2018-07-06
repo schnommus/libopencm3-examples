@@ -25,4 +25,3 @@ typedef struct _midi_usb_event_packet_t {
 #define MIDI_CHANNEL_PRESSURE  0xD
 #define MIDI_PITCH_BEND        0xE
 #define MIDI_SYSTEM_MESSAGE    0xF
-
