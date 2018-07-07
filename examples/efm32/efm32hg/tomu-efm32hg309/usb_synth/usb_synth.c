@@ -118,7 +118,7 @@ static const char * usb_strings[] = {
 /* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[1024];
 
-#define WAVEFORM_SAMPLES 512 /* 256 time units (stereo) */
+#define WAVEFORM_SAMPLES 256 /* 256 time units (stereo) */
 #define ISO_COPY_BUF_SZ  32  /* bytes = 16 samples = 8 time units */
 #define ISO_COPY_BUF_SAMPLES ISO_COPY_BUF_SZ/2
 
@@ -165,6 +165,8 @@ typedef struct {
     uint8_t key;
     uint8_t vel;
 
+    uint8_t sustained;
+
     uint16_t cur_sample;
     uint16_t skip_factor;
 
@@ -174,10 +176,10 @@ typedef struct {
 /* Power of two so fixed-point divide optimizes to a shift */
 #define FPM 128
 
-/* note_on and note_off maintain note_states such that
- * the first n_voices elements are always active notes */
+#define NOTE_IGNORE_MAX 94
+#define NOTE_IGNORE_MIN 21
+
 note_state_t note_states[MAX_VOICES];
-int n_voices = 0;
 
 uint16_t note_skip_table[MIDI_N_NOTES];
 
@@ -185,7 +187,7 @@ void init_data() {
     /* init all note states */
     memset(note_states, 0, sizeof(note_states));
 
-    /* Sawtooth wave */
+    /* Sine wave */
     for(int i = 0; i != WAVEFORM_SAMPLES; ++i) {
         waveform_data[i] = 15 * (float)sin(3.141 * 2.0 * (float)i / (float)WAVEFORM_SAMPLES);
     }
@@ -199,7 +201,7 @@ void init_data() {
 
     for(int n = 0; n != MIDI_N_NOTES; ++n) {
         uint16_t skip = 0;
-        if(n > 21 && n < 107) {
+        if(n > NOTE_IGNORE_MIN && n < NOTE_IGNORE_MAX) {
             float freq = 27.5 * 2.0 * pow(2.0, (n-21.0)/12.0);
             float period = 1.0 / freq;
             float waveform_period = ((float)WAVEFORM_SAMPLES / 8000.0);
@@ -223,13 +225,22 @@ void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
     uint16_t out_samples[ISO_COPY_BUF_SAMPLES];
     memset(out_samples, 0, ISO_COPY_BUF_SZ);
 
-    for(int i = 0; i != n_voices; ++i) {
-        /* For every (time) sample in the note... */
-        for(int s = 0; s != ISO_COPY_BUF_SAMPLES/2; ++s) {
-            note_states[i].cur_sample =
-                (note_states[i].cur_sample + note_states[i].skip_factor) % (WAVEFORM_SAMPLES*FPM);
-            out_samples[s*2] += note_states[i].vel*waveform_data[note_states[i].cur_sample / FPM];
-            out_samples[s*2+1] = out_samples[s*2];
+    for(int i = 0; i != MAX_VOICES; ++i) {
+        if(note_states[i].key > 0) {
+            /* For every (time) sample in the note... */
+            for(int s = 0; s != ISO_COPY_BUF_SAMPLES/2; ++s) {
+                note_states[i].cur_sample =
+                    (note_states[i].cur_sample + note_states[i].skip_factor) % (WAVEFORM_SAMPLES*FPM);
+                out_samples[s*2] += note_states[i].vel*waveform_data[note_states[i].cur_sample / FPM];
+                out_samples[s*2+1] = out_samples[s*2];
+
+            }
+
+            /* Hack to slowly kill note volume */
+            if(toggle % 10 == 0) {
+                --note_states[i].vel;
+                if(note_states[i].vel == 0) note_states[i].key = 0;
+            }
         }
     }
 
@@ -240,44 +251,69 @@ int evict = 0;
 
 void note_on_event(uint8_t channel, uint8_t key, uint8_t vel) {
 
-    int target = 0;
-    if(n_voices >= MAX_VOICES) {
-        target = evict++ % MAX_VOICES;
-    } else {
-        target = n_voices;
-        ++n_voices;
+    /* Ignore drums and invalid notes */
+    if(channel == 10 || key < NOTE_IGNORE_MIN || key > NOTE_IGNORE_MAX) {
+        return;
     }
+
+    /* Try and find an empty note slot */
+    int target = 0;
+    for(int i = 0; i != MAX_VOICES; ++i) {
+        if(note_states[i].key == 0) {
+            target = i;
+        }
+    }
+
+    /* Otherwise just evict round-robin */
+    if(target == 0)
+        target = evict++ % MAX_VOICES;
 
     gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
 
     note_states[target].channel = channel;
     note_states[target].key = key;
     note_states[target].vel = vel;
-
+    note_states[target].sustained = 0;
     note_states[target].cur_sample = 0;
-
     note_states[target].skip_factor = note_skip_table[key];
 }
+
+uint8_t sustain[MIDI_N_CHANNELS] = {0};
 
 void note_off_event(uint8_t channel, uint8_t key, uint8_t vel) {
 
     gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
 
-    for(int i = 0; i != n_voices; ++i) {
-        if(n_voices == 0) {
-            return;
-        }
+    for(int i = 0; i != MAX_VOICES; ++i) {
         if(note_states[i].channel == channel &&
            note_states[i].key == key) {
-            /* If we aren't removing the last note,
-             * swap the last note back into our position */
-            if(i != n_voices - 1) {
-                memcpy(&note_states[i],
-                       &note_states[n_voices-1],
-                       sizeof(note_state_t));
+            if(sustain[channel]) {
+                note_states[i].sustained = 1;
+            } else {
+                note_states[i].key = 0;
             }
-            --n_voices;
-            break;
+        }
+    }
+}
+
+#define MIDI_CC_SUSTAIN 0x40 /* Sustain pedal */
+
+void midi_cc_event(uint8_t channel, uint8_t cc_id, uint8_t value) {
+    if(cc_id == MIDI_CC_SUSTAIN) {
+        if(value >= 64) {
+            /* Pedal DOWN */
+            sustain[channel] = 1;
+        } else {
+            /* Pedal UP */
+            sustain[channel] = 0;
+
+            for(int i = 0; i != MAX_VOICES; ++i) {
+                if(note_states[i].channel == channel) {
+                    if(note_states[i].sustained) {
+                        note_states[i].key = 0;
+                    }
+                }
+            }
         }
     }
 }
@@ -299,6 +335,9 @@ void decode_midi_event_packet(midi_usb_event_packet_t p) {
         case MIDI_NOTE_ON: {
             note_on_event(midi_channel, p.midi1, p.midi2);
             break;
+        }
+        case MIDI_CONTINUOUS: {
+            midi_cc_event(midi_channel, p.midi1, p.midi2);
         }
         default: {
             break;
