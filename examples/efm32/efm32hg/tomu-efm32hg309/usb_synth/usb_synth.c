@@ -6,7 +6,7 @@
  * 'midi_descriptors.h' from the libopencm3 MIDI example, attribution:
  * Copyright (C) 2014 Daniel Thompson <daniel@redfelineninja.org.uk>
  *
- * All other files:
+ * Everything else:
  * Copyright (C) 2018 Seb Holzapfel <schnommus@gmail.com>
  *
  * This library is free software: you can redistribute it and/or modify
@@ -31,54 +31,37 @@
 #include <libopencm3/efm32/wdog.h>
 #include <libopencm3/efm32/gpio.h>
 #include <libopencm3/efm32/cmu.h>
-#include <libopencm3/usb/dwc_otg_common.h>
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 
-#include "usb_descriptors.h"
-#include "midi_events.h"
-
 #include "tomu_pins.h"
+#include "usb_descriptors.h"
+#include "usb_isochronous.h"
+#include "midi_events.h"
+#include "synth_core.h"
 
 /* Default AHB (core clock) frequency of Tomu board */
 #define AHB_FREQUENCY        14000000
 
+/* libopencm3 USB datastructures */
 usbd_device *g_usbd_dev = 0;
-
-/* Buffer to be used for control requests. */
 uint8_t usbd_control_buffer[1024];
 
-#define ISO_COPY_BUF_SZ  32  /* bytes = 16 samples = 8 time units */
+/* Amout of data is copied for every isochronous audio packet */
+#define ISO_COPY_BUF_SZ  32  /* bytes = 16 samples = 8 stereo time units */
 #define ISO_COPY_BUF_SAMPLES ISO_COPY_BUF_SZ/2
 
-/* HACK: upstream libopencm3 currently does not handle isochronous endpoints
- * correctly. We must program the USB peripheral with an even/odd frame bit,
- * toggling it so that we respond to every iso IN request from the host.
- * If this toggling is not performed, we only get half the bandwidth. */
-#define USB_REBASE(x) MMIO32((x) + (USB_OTG_FS_BASE))
-#define USB_DIEPCTLX_SD1PID     (1 << 29) /* Odd frames */
-#define USB_DIEPCTLX_SD0PID     (1 << 28) /* Even frames */
-void toggle_isochronous_frame(uint8_t ep)
+static void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
 {
-    static int toggle = 0;
-    if (toggle++ % 2 == 0) {
-        USB_REBASE(OTG_DIEPCTL(ep)) |= USB_DIEPCTLX_SD0PID;
-    } else {
-        USB_REBASE(OTG_DIEPCTL(ep)) |= USB_DIEPCTLX_SD1PID;
-    }
-}
+    /* Required to use full bandwidth - see `usb_isochronous.h` */
+    isochronous_frame_toggle(ep);
 
-void usbaudio_iso_stream_callback(usbd_device *usbd_dev, uint8_t ep)
-{
-    toggle_isochronous_frame(ep);
-
+    /* Create and write a new block of audio samples */
     uint16_t out_samples[ISO_COPY_BUF_SAMPLES];
-
-    core_stream_callback(out_samples, ISO_COPY_BUF_SAMPLES);
-
+    synth_core_stream(out_samples, ISO_COPY_BUF_SAMPLES);
     usbd_ep_write_packet(usbd_dev, 0x82, out_samples, ISO_COPY_BUF_SZ);
 }
 
@@ -92,7 +75,7 @@ static void usbmidi_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
     /* Check if this USB packet contains one or more MIDI packets */
     if(len % 4 == 0) {
         for(int i = 0; i != len; i += 4) {
-            decode_midi_event_packet(*(midi_usb_event_packet_t*)(buf+i));
+            synth_core_decode_midi_packet(*(midi_usb_event_packet_t*)(buf+i));
         }
     }
 }
@@ -112,14 +95,6 @@ static void usbaudio_set_config(usbd_device *usbd_dev, uint16_t wValue)
     /* XXX: This is necessary -> but why? */
     uint8_t junk[ISO_COPY_BUF_SZ] = {0};
     usbd_ep_write_packet(usbd_dev, 0x82, junk, ISO_COPY_BUF_SZ);
-}
-
-void led_green_on() {
-    gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
-}
-
-void led_green_off() {
-    gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
 }
 
 void usb_isr(void)

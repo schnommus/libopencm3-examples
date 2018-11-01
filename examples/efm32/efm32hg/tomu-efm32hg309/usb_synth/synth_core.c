@@ -1,6 +1,6 @@
 /*
  * File: synth_core.c
- * A wonderfully-terrible wavetablesque polyphonic synthesizer.
+ * A pretty terrible wavetablesque polyphonic synthesizer.
  *
  * Copyright (C) 2018 Seb Holzapfel <schnommus@gmail.com>
  *
@@ -18,9 +18,12 @@
  * along with this library.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdint.h>
+#include "synth_core.h"
 
-#include "midi_events.h"
+#include "tomu_pins.h" /* Just for blinking the green LED */
+
+#include <string.h>
+#include <math.h>
 
 /* Maximum amount of simultaneous notes. Taking this much higher
  * will cause isochronous packets not to be emitted on time. */
@@ -31,7 +34,7 @@
 #define NOTE_IGNORE_MIN 21
 #define NOTE_IGNORE_MAX 94
 
-/* Fixed-point multiplier for TODO
+/* Fixed-point multiplier for skip factors on the base waveform.
  * Power of two so divide optimizes to a shift */
 #define FPM 128
 
@@ -64,8 +67,8 @@ uint16_t note_skip_table[MIDI_N_NOTES];
 /* Keep track of whether sustain is down on a particular channel */
 uint8_t sustain[MIDI_N_CHANNELS] = {0};
 
-void synth_core_init() {
-
+void synth_core_init(void)
+{
     /* Null out all note states */
     memset(note_states, 0, sizeof(note_states));
 
@@ -93,8 +96,8 @@ void synth_core_init() {
 
 /* The core stream callback emits a block of samples to be transferred
  * back to the host by summing skip-traversed 'base' waveforms over all voices */
-void core_stream_callback(uint16_t *out_samples, uint16_t n_samples) {
-
+void synth_core_stream(uint16_t *out_samples, uint16_t n_samples)
+{
     static uint32_t t = 0; /* 'time' */
 
     memset(out_samples, 0, n_samples*sizeof(uint16_t));
@@ -129,8 +132,8 @@ void core_stream_callback(uint16_t *out_samples, uint16_t n_samples) {
     ++t;
 }
 
-void note_on_event(uint8_t channel, uint8_t key, uint8_t vel) {
-
+static void note_on_event(uint8_t channel, uint8_t key, uint8_t vel)
+{
     /* Basically, when a MIDI note arrives, we update pdate note_states
      * by either populating an empty voice, or evicting one */
 
@@ -152,7 +155,7 @@ void note_on_event(uint8_t channel, uint8_t key, uint8_t vel) {
     if(target == 0)
         target = evict++ % MAX_VOICES;
 
-    led_green_on();
+    gpio_clear(LED_GREEN_PORT, LED_GREEN_PIN);
 
     /* At this point, we have a target note. Fill it up */
     note_states[target].channel = channel;
@@ -163,9 +166,11 @@ void note_on_event(uint8_t channel, uint8_t key, uint8_t vel) {
     note_states[target].skip_factor = note_skip_table[key];
 }
 
-void note_off_event(uint8_t channel, uint8_t key, uint8_t vel) {
+static void note_off_event(uint8_t channel, uint8_t key, uint8_t vel)
+{
+    (void) vel; /* unused for note_off */
 
-    led_green_off();
+    gpio_set(LED_GREEN_PORT, LED_GREEN_PIN);
 
     /* Delete the target note, or switch it to 'sustained' state */
     for(int i = 0; i != MAX_VOICES; ++i) {
@@ -180,7 +185,8 @@ void note_off_event(uint8_t channel, uint8_t key, uint8_t vel) {
     }
 }
 
-void midi_cc_event(uint8_t channel, uint8_t cc_id, uint8_t value) {
+static void midi_cc_event(uint8_t channel, uint8_t cc_id, uint8_t value)
+{
     /* Only handle sustain CC messages for now */
     if(cc_id == MIDI_CC_SUSTAIN) {
         if(value >= 64) {
@@ -202,8 +208,8 @@ void midi_cc_event(uint8_t channel, uint8_t cc_id, uint8_t value) {
     }
 }
 
-void decode_midi_event_packet(midi_usb_event_packet_t p) {
-
+void synth_core_decode_midi_packet(midi_usb_event_packet_t p)
+{
     uint8_t midi_channel = p.midi0 & 0xF;
     uint8_t midi_command = p.midi0 >> 4;
 
