@@ -25,3 +25,13 @@ typedef struct _midi_usb_event_packet_t {
 #define MIDI_CHANNEL_PRESSURE  0xD
 #define MIDI_PITCH_BEND        0xE
 #define MIDI_SYSTEM_MESSAGE    0xF
+
+/* Some more MIDI defines */
+#define MIDI_NOTE_MAX   127
+#define MIDI_NOTE_MIN   0
+#define MIDI_N_NOTES    128
+#define MIDI_CHANNEL_MAX 15
+#define MIDI_CHANNEL_MIN 0
+#define MIDI_N_CHANNELS 16
+
+#define MIDI_CC_SUSTAIN 0x40 /* Sustain pedal CC code */

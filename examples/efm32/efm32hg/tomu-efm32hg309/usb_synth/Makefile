@@ -20,6 +20,8 @@
 BINARY = usb_synth
 LDSCRIPT = ../tomu-efm32hg309.ld
 
+OBJS = synth_core.o
+
 # We're using some maths here
 LDLIBS += -lm
 
